@@ -88,9 +88,13 @@ export class CDP {
 }
 
 export async function connectCDP(port) {
-  for (let i = 0; i < 120; i++) {
+  // CI runners can be heavily loaded while many tests start/stop Chromium in
+  // sequence. Give Chrome enough time to publish its DevTools endpoint, but
+  // keep each probe bounded so a dead browser does not hang the suite.
+  const deadline = Date.now() + 90000;
+  while (Date.now() < deadline) {
     try {
-      const r = await fetch(`http://127.0.0.1:${port}/json/list`);
+      const r = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1500) });
       const targets = await r.json();
       const page = targets.find((t) => t.type === 'page');
       if (page?.webSocketDebuggerUrl) {
@@ -101,7 +105,7 @@ export async function connectCDP(port) {
     } catch {}
     await sleep(250);
   }
-  throw new Error('Could not connect to CDP on ' + port);
+  throw new Error('Could not connect to CDP on ' + port + ' within 90s');
 }
 
 // Evaluate an expression in the page and return its value by-value (throws on page exception).
