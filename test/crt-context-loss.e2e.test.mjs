@@ -36,7 +36,12 @@ const stopChild = (child, graceful = false) => new Promise(resolve => {
       if (process.platform === 'win32') {
         const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
         killer.on('error', () => { try { child.kill('SIGKILL'); } catch {} });
-      } else child.kill('SIGKILL');
+      } else {
+        // Chrome is launched as its own process group in CI; kill the whole
+        // group so renderer/GPU children cannot accumulate across fast tests.
+        try { process.kill(-child.pid, 'SIGKILL'); }
+        catch { try { child.kill('SIGKILL'); } catch {} }
+      }
     } catch (_) { clearTimeout(timer); resolve(); }
   };
   if (graceful) killTimer = setTimeout(kill, 3000); else kill();
@@ -55,7 +60,7 @@ const chrome = spawn(findChrome(), [
   '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-gpu-sandbox',
   '--remote-debugging-address=127.0.0.1', '--disable-background-networking', '--disable-component-update',
   `--remote-debugging-port=${cdpPort}`, '--window-size=1280,720', `--user-data-dir=${profile}`, 'about:blank'
-], { stdio: 'ignore' });
+], { stdio: 'ignore', detached: process.platform !== 'win32' });
 
 let cdp = null;
 try {
